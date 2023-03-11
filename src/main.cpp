@@ -1,4 +1,6 @@
 #include <Arduino.h>
+// LCD_IMPLEMENTATION must be defined in a single
+// source file, before lcd_init.h
 #define LCD_IMPLEMENTATION
 #include "lcd_init.h"
 static uint8_t lcd_buffer[32*1024];
