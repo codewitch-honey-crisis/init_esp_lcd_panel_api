@@ -5,7 +5,6 @@
 #include <string.h>
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
-#include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
 // extra drivers:
@@ -13,6 +12,7 @@
 #include "esp_lcd_panel_ili9342.h"
 #include "esp_lcd_panel_ili9488.h"
 #endif // LCD_IMPLEMENTATION
+#include "esp_lcd_panel_io.h"
 
 // global so it can be used after init
 void lcd_panel_init(size_t max_transfer_size,esp_lcd_panel_io_color_trans_done_cb_t done_callback);
