@@ -180,11 +180,36 @@
 #else
     #define LCD_PIXEL_CLOCK_HZ (14 * 1000 * 1000)
 #endif
-
-#define LCD_GAP_X 0
-#define LCD_GAP_Y 0
-#define LCD_MIRROR_X false
-#define LCD_MIRROR_Y false
-#define LCD_INVERT_COLOR false
 #endif // ESP_DISPLAY_4INCH
+
+#ifdef T_DISPLAY_S3
+#define LCD_BCKL_ON_LEVEL 1
+#define LCD_BCKL_OFF_LEVEL !LCD_BCKL_ON_LEVEL
+#define LCD_PIN_NUM_CS 6
+#define LCD_PIN_NUM_RST 5
+#define LCD_PIN_NUM_WR 8
+#define LCD_PIN_NUM_RD 9
+#define LCD_PIN_NUM_RS 7
+#define LCD_PIN_NUM_D00 39
+#define LCD_PIN_NUM_D01 40
+#define LCD_PIN_NUM_D02 41
+#define LCD_PIN_NUM_D03 42
+#define LCD_PIN_NUM_D04 45
+#define LCD_PIN_NUM_D05 46
+#define LCD_PIN_NUM_D06 47
+#define LCD_PIN_NUM_D07 48
+#define LCD_PIN_NUM_BCKL 38
+#define LCD_PANEL esp_lcd_new_panel_st7789
+#define LCD_HRES 170
+#define LCD_VRES 320
+#define LCD_COLOR_SPACE ESP_LCD_COLOR_SPACE_RGB
+#define LCD_PIXEL_CLOCK_HZ (6528 * 1000)
+#define LCD_GAP_X 0
+#define LCD_GAP_Y 35
+#define LCD_MIRROR_X false
+#define LCD_MIRROR_Y true
+#define LCD_INVERT_COLOR true
+#define LCD_SWAP_XY true
+#endif // T_DISPLAY_S3
+
 #endif // LCD_CONFIG_H
