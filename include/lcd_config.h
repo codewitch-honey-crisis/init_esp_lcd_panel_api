@@ -135,7 +135,7 @@
 #ifdef ESP_DISPLAY_4INCH
 #define LCD_BCKL_ON_LEVEL 1
 #define LCD_BCKL_OFF_LEVEL !LCD_BCKL_ON_LEVEL
-#define LCD_PIN_NUM_CS 1
+//#define LCD_PIN_NUM_CS 1
 #define LCD_PIN_NUM_SCK 12
 #define LCD_PIN_NUM_SDA 11 
 #define LCD_PIN_NUM_DE 45
@@ -212,4 +212,16 @@
 #define LCD_SWAP_XY true
 #endif // T_DISPLAY_S3
 
+#ifdef LCD_SWAP_XY
+#if LCD_SWAP_XY
+#define LCD_WIDTH LCD_VRES
+#define LCD_HEIGHT LCD_HRES
+#else
+#define LCD_WIDTH LCD_HRES
+#define LCD_HEIGHT LCD_VRES
+#endif
+#else
+#define LCD_WIDTH LCD_HRES
+#define LCD_HEIGHT LCD_VRES
+#endif
 #endif // LCD_CONFIG_H

@@ -1,6 +1,8 @@
-#include <Arduino.h>
+#ifdef ESP_IDF
 // LCD_IMPLEMENTATION must be defined in a single
 // source file, before lcd_init.h
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #define LCD_IMPLEMENTATION
 #include "lcd_init.h"
 static uint8_t lcd_buffer[32*1024];
@@ -13,22 +15,22 @@ static bool lcd_flush_ready(esp_lcd_panel_io_handle_t panel_io,
     return true;
 }
 #endif
-void setup() {
-  Serial.begin(115200);
+
+void app_main() {  
 #ifdef LCD_PIN_NUM_HSYNC
   lcd_panel_init();
 #else
   lcd_panel_init(sizeof(lcd_buffer),lcd_flush_ready);
 #endif
   memset(lcd_buffer,rand()&0xFF,sizeof(lcd_buffer));
-  int width = lcd_width;
+  int width = LCD_WIDTH;
   if(width*2>sizeof(lcd_buffer)) {
     printf("Not enough transfer mem\n");
     while(1);
   }
   int height = sizeof(lcd_buffer)/(width*2);
-  for(int y = 0;y<lcd_height;y+=height) {
-    for(int x = 0;x<lcd_width;x+=width) {
+  for(int y = 0;y<LCD_HEIGHT;y+=height) {
+    for(int x = 0;x<LCD_WIDTH;x+=width) {
       int x1 = x;
       int y1 = y;
       int x2 = x1 + width-1;
@@ -44,6 +46,4 @@ void setup() {
   }
 }
 
-void loop() {
-  // put your main code here, to run repeatedly:
-}
+#endif // ESP_IDF

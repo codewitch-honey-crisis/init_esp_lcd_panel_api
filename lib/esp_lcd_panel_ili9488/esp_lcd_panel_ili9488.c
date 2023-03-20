@@ -115,7 +115,11 @@ esp_err_t esp_lcd_new_panel_ili9488(const esp_lcd_panel_io_handle_t io, const es
     ili9488->base.set_gap = panel_ili9488_set_gap;
     ili9488->base.mirror = panel_ili9488_mirror;
     ili9488->base.swap_xy = panel_ili9488_swap_xy;
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+    ili9488->base.disp_on_off = panel_ili9488_disp_on_off;
+#else
     ili9488->base.disp_off = panel_ili9488_disp_on_off;
+#endif
     *ret_panel = &(ili9488->base);
     ESP_LOGD(TAG, "new ili9488 panel @%p", ili9488);
 

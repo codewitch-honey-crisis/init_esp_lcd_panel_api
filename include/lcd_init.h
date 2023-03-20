@@ -1,12 +1,34 @@
 #ifndef LCD_INIT_H
 #define LCD_INIT_H
-#ifdef LCD_IMPLEMENTATION
 #include "lcd_config.h"
+#include <esp_lcd_panel_io.h>
+#ifdef __cplusplus
+extern "C" {
+#endif  // __cplusplus
+esp_err_t lcd_panel_draw_bitmap(int x1, int y1, int x2, int y2, void* bitmap);
+#ifdef LCD_PIN_NUM_HSYNC
+bool lcd_panel_init();
+esp_err_t esp_lcd_new_panel_st7701();
+#endif
+#ifndef LCD_PIN_NUM_HSYNC
+// global so it can be used after init
+bool lcd_panel_init(size_t max_transfer_size, esp_lcd_panel_io_color_trans_done_cb_t done_callback);
+#endif  // LCD_PIN_NUM_HSYNC
+#ifdef __cplusplus
+}
+#endif  // __cplusplus
+
+
+
+esp_lcd_panel_handle_t lcd_handle;
+#ifdef LCD_IMPLEMENTATION
 #include <string.h>
-#include "driver/spi_master.h"
-#include "driver/gpio.h"
-#include "esp_lcd_panel_ops.h"
-#include "esp_lcd_panel_vendor.h"
+
+#include <driver/gpio.h>
+#include <driver/spi_master.h>
+#include <esp_lcd_panel_ops.h>
+#include <esp_lcd_panel_vendor.h>
+
 // extra drivers:
 #if __has_include(<esp_lcd_panel_ili9341.h>)
 #include <esp_lcd_panel_ili9341.h>
@@ -17,63 +39,65 @@
 #if __has_include(<esp_lcd_panel_ili9488.h>)
 #include <esp_lcd_panel_ili9488.h>
 #endif
-#endif // LCD_IMPLEMENTATION
-#include "esp_lcd_panel_io.h"
+#endif  // LCD_IMPLEMENTATION
+
 #ifdef LCD_PIN_NUM_HSYNC
-#ifdef LCD_IMPLEMENTATION
-// currently requires an ESP32-S3
-#if __has_include(<esp32s3/rom/cache.h>)
-#include <esp32s3/rom/cache.h>
-extern int Cache_WriteBack_Addr(uint32_t addr, uint32_t size);
-#endif
+#if !defined(LCD_IMPLEMENTATION)
+extern esp_lcd_panel_handle_t lcd_handle;
+#else
 #include <driver/gpio.h>
 #include <esp_lcd_panel_interface.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_rgb.h>
 #include <esp_lcd_panel_vendor.h>
-#include <esp_log.h>
-#include <esp_pm.h>
-#include <esp_private/gdma.h>
 #include <esp_rom_gpio.h>
-#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <hal/dma_types.h>
-#include <hal/gdma_ll.h>
 #include <hal/gpio_hal.h>
 #include <hal/gpio_ll.h>
-#include <hal/lcd_hal.h>
-#include <hal/lcd_ll.h>
 #include <rom/gpio.h>
-#include <sdkconfig.h>
-#include <soc/gdma_channel.h>
-#include <soc/gdma_reg.h>
-#include <soc/gdma_struct.h>
 #include <soc/gpio_periph.h>
 #include <soc/gpio_reg.h>
 #include <soc/gpio_sig_map.h>
 #include <soc/gpio_struct.h>
+
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
+// currently requires an ESP32-S3 for RGB
+#if __has_include(<esp32s3/rom/cache.h>)
+#include <esp32s3/rom/cache.h>
+extern int Cache_WriteBack_Addr(uint32_t addr, uint32_t size);
+#endif
+#include <driver/i2c.h>
+#include <driver/rtc_io.h>
+#include <driver/spi_common.h>
+#include <driver/spi_master.h>
+#include <esp_log.h>
+#include <esp_pm.h>
+#include <esp_private/gdma.h>
+#include <esp_timer.h>
+#include <hal/dma_types.h>
+#include <hal/gdma_ll.h>
+#include <hal/lcd_hal.h>
+#include <hal/lcd_ll.h>
+#include <math.h>
+#include <sdkconfig.h>
+#include <soc/apb_ctrl_reg.h>
+#include <soc/efuse_reg.h>
+#include <soc/gdma_channel.h>
+#include <soc/gdma_reg.h>
+#include <soc/gdma_struct.h>
+#include <soc/i2c_reg.h>
+#include <soc/i2c_struct.h>
 #include <soc/i2s_reg.h>
 #include <soc/lcd_cam_reg.h>
 #include <soc/lcd_cam_struct.h>
 #include <soc/lcd_periph.h>
+#include <soc/rtc.h>
 #include <soc/soc.h>
 #include <soc/spi_reg.h>
-
-#include <algorithm>
 #include <string.h>
-#include <math.h>
 
-#include <driver/i2c.h>
-#include <driver/spi_common.h>
-#include <driver/spi_master.h>
-#include <driver/rtc_io.h>
-#include <soc/rtc.h>
-#include <soc/i2c_reg.h>
-#include <soc/i2c_struct.h>
-#include <soc/apb_ctrl_reg.h>
-#include <soc/efuse_reg.h>
 #if defined(SOC_GDMA_SUPPORTED)  // for C3/S3
 #include <soc/gdma_reg.h>
 // S3とC3で同じレジスタに異なる定義名がついているため、ここで統一;
@@ -85,176 +109,401 @@ extern int Cache_WriteBack_Addr(uint32_t addr, uint32_t size);
 // #define REG_SPI_BASE(i) (DR_REG_SPI0_BASE - (i) * 0x1000)
 #define REG_SPI_BASE(i) (DR_REG_SPI2_BASE)
 #endif
-#endif // LCD_IMPLEMENTATION
-#endif // LCD_PIN_NUM_HSYNC
+#endif
+
+#endif  // LCD_PIN_NUM_HSYNC
+
 #ifdef LCD_PIN_NUM_HSYNC
-bool lcd_panel_init();
-esp_err_t esp_lcd_new_panel_st7701();
-#else
-// global so it can be used after init
-bool lcd_panel_init(size_t max_transfer_size,esp_lcd_panel_io_color_trans_done_cb_t done_callback);
-#endif // LCD_PIN_NUM_HSYNC
-esp_err_t lcd_panel_draw_bitmap(int x1,int y1,int x2,int y2, void* bitmap);
-#if !defined(LCD_IMPLEMENTATION)
-extern esp_lcd_panel_handle_t lcd_handle;
-extern int lcd_width;
-extern int lcd_height;
-#else
-esp_lcd_panel_handle_t lcd_handle;
-#ifdef LCD_SWAP_XY
-int lcd_width = LCD_VRES; // swapped
-int lcd_height = LCD_HRES;
-#else
-int lcd_width = LCD_HRES;
-int lcd_height = LCD_VRES;
-#endif // LCD_SWAP_XY
-#ifndef LCD_PIN_NUM_HSYNC
-// initialize the screen using the esp lcd panel API
-bool lcd_panel_init(size_t max_transfer_size,esp_lcd_panel_io_color_trans_done_cb_t done_callback) {
-#ifdef LCD_PIN_NUM_BCKL
-    gpio_set_direction((gpio_num_t)LCD_PIN_NUM_BCKL,GPIO_MODE_OUTPUT);
-#endif // LCD_PIN_NUM_BCKL
-#ifdef LCD_SPI_HOST // 1-bit SPI
-    spi_bus_config_t bus_config;
-    memset(&bus_config, 0, sizeof(bus_config));
-    bus_config.sclk_io_num = LCD_PIN_NUM_CLK;
-    bus_config.mosi_io_num = LCD_PIN_NUM_MOSI;
-#ifdef LCD_PIN_NUM_MISO
-    bus_config.miso_io_num = LCD_PIN_NUM_MISO;
-#else
-    bus_config.miso_io_num = -1;
-#endif // LCD_PIN_NUM_MISO
-#ifdef LCD_PIN_NUM_QUADWP
-    bus_config.quadwp_io_num = LCD_PIN_NUM_QUADWP;
-#else
-    bus_config.quadwp_io_num = -1;
-#endif
-#ifdef LCD_PIN_NUM_QUADHD
-    bus_config.quadhd_io_num = LCD_PIN_NUM_QUADHD;
-#else
-    bus_config.quadhd_io_num = -1;
-#endif
-    bus_config.max_transfer_sz = max_transfer_size + 8;
-
-    // Initialize the SPI bus on LCD_SPI_HOST
-    spi_bus_initialize(LCD_SPI_HOST, &bus_config, SPI_DMA_CH_AUTO);
-
-    esp_lcd_panel_io_handle_t io_handle = NULL;
-    esp_lcd_panel_io_spi_config_t io_config;
-    memset(&io_config, 0, sizeof(io_config));
-    io_config.dc_gpio_num = LCD_PIN_NUM_DC,
-    io_config.cs_gpio_num = LCD_PIN_NUM_CS,
-    io_config.pclk_hz = LCD_PIXEL_CLOCK_HZ,
-    io_config.lcd_cmd_bits = 8,
-    io_config.lcd_param_bits = 8,
-    io_config.spi_mode = 0,
-    io_config.trans_queue_depth = 10,
-    io_config.on_color_trans_done = done_callback;
-    // Attach the LCD to the SPI bus
-    esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_SPI_HOST, 
-                            &io_config, &
-                            io_handle);
-#elif defined(LCD_PIN_NUM_D07) // 8 or 16-bit i8080
-    gpio_set_direction((gpio_num_t)LCD_PIN_NUM_RD,GPIO_MODE_OUTPUT);
-    gpio_set_level((gpio_num_t)LCD_PIN_NUM_RD,1);
-    esp_lcd_i80_bus_handle_t i80_bus = NULL;
-    esp_lcd_i80_bus_config_t bus_config;
-    memset(&bus_config,0,sizeof(bus_config));
-    bus_config.clk_src = LCD_CLK_SRC_PLL160M;
-    bus_config.dc_gpio_num = LCD_PIN_NUM_RS;
-    bus_config.wr_gpio_num = LCD_PIN_NUM_WR;
-    bus_config.data_gpio_nums[0] = LCD_PIN_NUM_D00;
-    bus_config.data_gpio_nums[1] = LCD_PIN_NUM_D01;
-    bus_config.data_gpio_nums[2] = LCD_PIN_NUM_D02;
-    bus_config.data_gpio_nums[3] = LCD_PIN_NUM_D03;
-    bus_config.data_gpio_nums[4] = LCD_PIN_NUM_D04;
-    bus_config.data_gpio_nums[5] = LCD_PIN_NUM_D05;
-    bus_config.data_gpio_nums[6] = LCD_PIN_NUM_D06;
-    bus_config.data_gpio_nums[7] = LCD_PIN_NUM_D07;
-#ifdef LCD_PIN_NUM_D15
-    bus_config.data_gpio_nums[8] = LCD_PIN_NUM_D08;
-    bus_config.data_gpio_nums[9] = LCD_PIN_NUM_D09;
-    bus_config.data_gpio_nums[10] = LCD_PIN_NUM_D10;
-    bus_config.data_gpio_nums[11] = LCD_PIN_NUM_D11;
-    bus_config.data_gpio_nums[12] = LCD_PIN_NUM_D12;
-    bus_config.data_gpio_nums[13] = LCD_PIN_NUM_D13;
-    bus_config.data_gpio_nums[14] = LCD_PIN_NUM_D14;
-    bus_config.data_gpio_nums[15] = LCD_PIN_NUM_D15;
-    bus_config.bus_width = 16;
-#else
-    bus_config.bus_width = 8;
-#endif // LCD_PIN_NUM_D15
-    bus_config.max_transfer_bytes = max_transfer_size;
-
-    esp_lcd_new_i80_bus(&bus_config, &i80_bus);
-
-    esp_lcd_panel_io_handle_t io_handle = NULL;
-
-    esp_lcd_panel_io_i80_config_t io_config;
-    memset(&io_config,0,sizeof(io_config));
-    io_config.cs_gpio_num = LCD_PIN_NUM_CS;
-    io_config.pclk_hz = LCD_PIXEL_CLOCK_HZ;
-    io_config.trans_queue_depth = 20;
-    io_config.dc_levels.dc_idle_level=0;
-    io_config.dc_levels.dc_idle_level = 0;
-    io_config.dc_levels.dc_cmd_level = 0;
-    io_config.dc_levels.dc_dummy_level = 0;
-    io_config.dc_levels.dc_data_level = 1;    
-    io_config.lcd_cmd_bits = 8;
-    io_config.lcd_param_bits = 8;
-    io_config.on_color_trans_done = done_callback;
-    io_config.user_ctx = NULL;
-#ifdef LCD_SWAP_COLOR_BYTES
-    io_config.flags.swap_color_bytes = LCD_SWAP_COLOR_BYTES;
-#else
-    io_config.flags.swap_color_bytes = false;
-#endif // LCD_SWAP_COLOR_BYTES
-    io_config.flags.cs_active_high = false;
-    io_config.flags.reverse_color_bits = false;
-    esp_lcd_new_panel_io_i80(i80_bus, &io_config, &io_handle);
-#endif // LCD_PIN_NUM_D15
-    lcd_handle = NULL;
-    esp_lcd_panel_dev_config_t panel_config;
-    memset(&panel_config, 0, sizeof(panel_config));
-#ifdef LCD_PIN_NUM_RST
-    panel_config.reset_gpio_num = LCD_PIN_NUM_RST;
-#else
-    panel_config.reset_gpio_num = -1;
-#endif
-    panel_config.color_space = LCD_COLOR_SPACE;
-    panel_config.bits_per_pixel = 16;
-
-    // Initialize the LCD configuration
-    LCD_PANEL(io_handle, &panel_config, &lcd_handle);
-    
-#ifdef LCD_PIN_NUM_BCKL
-    // Turn off backlight to avoid unpredictable display on 
-    // the LCD screen while initializing
-    // the LCD panel driver. (Different LCD screens may need different levels)
-    gpio_set_level((gpio_num_t)LCD_PIN_NUM_BCKL,LCD_BCKL_OFF_LEVEL);
-#endif // LCD_PIN_NUM_BCKL
-    // Reset the display
-    esp_lcd_panel_reset(lcd_handle);
-
-    // Initialize LCD panel
-    esp_lcd_panel_init(lcd_handle);
-
-    esp_lcd_panel_swap_xy(lcd_handle, LCD_SWAP_XY);
-    esp_lcd_panel_set_gap(lcd_handle, LCD_GAP_X, LCD_GAP_Y);
-    esp_lcd_panel_mirror(lcd_handle, LCD_MIRROR_X, LCD_MIRROR_Y);
-    esp_lcd_panel_invert_color(lcd_handle, LCD_INVERT_COLOR);
-    // Turn on the screen
-    esp_lcd_panel_disp_off(lcd_handle, false);
-#ifdef LCD_PIN_NUM_BCKL
-    // Turn on backlight (Different LCD screens may need different levels)
-    gpio_set_level((gpio_num_t)LCD_PIN_NUM_BCKL,LCD_BCKL_ON_LEVEL);
-#endif // LCD_PIN_NUM_BCKL
-    return true;
+typedef struct lcd_pin_backup {
+    uint32_t _io_mux_gpio_reg;
+    uint32_t _gpio_func_out_reg;
+    gpio_num_t _pin_num;
+} lcd_pin_backup_t;
+static void lcd_init_pin_backup(gpio_num_t pin_num, lcd_pin_backup_t* in_out_pin_backup) {
+    in_out_pin_backup->_io_mux_gpio_reg = *(uint32_t*)(GPIO_PIN_MUX_REG[pin_num]);
+    in_out_pin_backup->_gpio_func_out_reg = *(uint32_t*)(GPIO_FUNC0_OUT_SEL_CFG_REG + (pin_num * 4));
+    in_out_pin_backup->_pin_num = pin_num;
 }
-esp_err_t lcd_panel_draw_bitmap(int x1,int y1,int x2,int y2, void* bitmap) {
-    return esp_lcd_panel_draw_bitmap(lcd_handle,x1,y1,x2+1,y2+1,bitmap);
+static void lcd_pin_backup_restore(lcd_pin_backup_t* pin_backup) {
+    if ((uint32_t)pin_backup->_pin_num < GPIO_NUM_MAX) {
+        *(uint32_t*)(GPIO_PIN_MUX_REG[pin_backup->_pin_num]) = pin_backup->_io_mux_gpio_reg;
+        *(uint32_t*)(GPIO_FUNC0_OUT_SEL_CFG_REG + (pin_backup->_pin_num * 4)) = pin_backup->_gpio_func_out_reg;
+    }
 }
-#else
+static inline volatile uint32_t* lcd_get_gpio_hi_reg(int_fast8_t pin) { return (pin & 32) ? &GPIO.out1_w1ts.val : &GPIO.out_w1ts; }
+static inline volatile uint32_t* lcd_get_gpio_lo_reg(int_fast8_t pin) { return (pin & 32) ? &GPIO.out1_w1tc.val : &GPIO.out_w1tc; }
+static inline void lcd_gpio_hi(int_fast8_t pin) {
+    //printf("pin %d high\n",pin);
+    if (pin >= 0) *lcd_get_gpio_hi_reg(pin) = 1 << (pin & 31);
+}
+static inline void lcd_gpio_lo(int_fast8_t pin) {
+    //printf("pin %d low\n",pin);
+    if (pin >= 0) *lcd_get_gpio_lo_reg(pin) = 1 << (pin & 31);
+}
+static void lcd_rgb_write_swspi(uint32_t data, uint8_t bits) {
+    uint_fast8_t mask = 1 << (bits - 1);
+    do {
+        lcd_gpio_lo(LCD_PIN_NUM_SCK);
+        if (data & mask) {
+            lcd_gpio_hi(LCD_PIN_NUM_SDA);
+        } else {
+            lcd_gpio_lo(LCD_PIN_NUM_SDA);
+        }
+        lcd_gpio_hi(LCD_PIN_NUM_SCK);
+    } while (mask >>= 1);
+}
+static void lcd_rgb_write_command(uint32_t data, uint_fast8_t len) {
+    do {
+        lcd_rgb_write_swspi(data & 0xFF, 9);
+        data >>= 8;
+    } while (--len);
+}
+
+static void lcd_rgb_write_data(uint32_t data, uint_fast8_t len) {
+    do {
+        lcd_rgb_write_swspi(data | 0x100, 9);
+        data >>= 8;
+    } while (--len);
+}
+esp_err_t esp_lcd_new_panel_st7701() {
+    int32_t pin_mosi = LCD_PIN_NUM_SDA;
+    int32_t pin_sclk = LCD_PIN_NUM_SCK;
+    if (pin_mosi >= 0 && pin_sclk >= 0) {
+        lcd_pin_backup_t backup_pins[2];
+        lcd_init_pin_backup((gpio_num_t)pin_mosi,&backup_pins[0]);
+        lcd_init_pin_backup((gpio_num_t)pin_sclk,&backup_pins[1]);
+        lcd_gpio_lo(pin_mosi);
+        gpio_set_direction((gpio_num_t)pin_mosi, GPIO_MODE_OUTPUT);
+        lcd_gpio_lo(pin_sclk);
+        gpio_set_direction((gpio_num_t)pin_sclk, GPIO_MODE_OUTPUT);
+#ifdef LCD_PIN_NUM_CS
+#if LCD_PIN_NUM_CS >= 0
+        int32_t pin_cs = LCD_PIN_NUM_CS;
+        lcd_gpio_lo(pin_cs);
+#endif
+#endif
+        lcd_rgb_write_command(0xFF, 1);
+        lcd_rgb_write_data(0x77, 1);
+        lcd_rgb_write_data(0x01, 1);
+        lcd_rgb_write_data(0x00, 2);
+        lcd_rgb_write_data(0x10, 1);
+
+        // 0xC0 : LNSET : Display Line Setting
+        lcd_rgb_write_command(0xC0, 1);
+        uint32_t line1 = (LCD_VRES >> 3) + 1;
+        uint32_t line2 = (LCD_VRES >> 1) & 3;
+        lcd_rgb_write_data(line1 + (line2 ? 0x80 : 0x00), 1);
+        lcd_rgb_write_data(line2, 1);
+
+        // 0xC3 : RGBCTRL
+        lcd_rgb_write_command(0xC3, 1);
+        uint32_t rgbctrl = 0;
+        if (LCD_DE_IDLE_HIGH) rgbctrl += 0x01;
+        if (LCD_CLK_IDLE_HIGH) rgbctrl += 0x02;
+        if (!LCD_HSYNC_POLARITY) rgbctrl += 0x04;
+        if (!LCD_VSYNC_POLARITY) rgbctrl += 0x08;
+        lcd_rgb_write_data(rgbctrl, 1);
+        lcd_rgb_write_data(0x10, 1);
+        lcd_rgb_write_data(0x08, 1);
+
+        static uint8_t list0[] =
+            {
+                // Command2 BK0 SEL
+                0xFF,
+                5,
+                0x77,
+                0x01,
+                0x00,
+                0x00,
+                0x10,
+
+                0xC1,
+                2,
+                0x0D,
+                0x02,
+                0xC2,
+                2,
+                0x31,
+                0x05,
+                0xCD,
+                1,
+                0x08,
+
+                // Positive Voltage Gamma Control
+                0xB0,
+                16,
+                0x00,
+                0x11,
+                0x18,
+                0x0E,
+                0x11,
+                0x06,
+                0x07,
+                0x08,
+                0x07,
+                0x22,
+                0x04,
+                0x12,
+                0x0F,
+                0xAA,
+                0x31,
+                0x18,
+
+                // Negative Voltage Gamma Control
+                0xB1,
+                16,
+                0x00,
+                0x11,
+                0x19,
+                0x0E,
+                0x12,
+                0x07,
+                0x08,
+                0x08,
+                0x08,
+                0x22,
+                0x04,
+                0x11,
+                0x11,
+                0xA9,
+                0x32,
+                0x18,
+
+                // Command2 BK1 SEL
+                0xFF,
+                5,
+                0x77,
+                0x01,
+                0x00,
+                0x00,
+                0x11,
+
+                0xB0,
+                1,
+                0x60,  // Vop=4.7375v
+                0xB1,
+                1,
+                0x32,  // VCOM=32
+                0xB2,
+                1,
+                0x07,  // VGH=15v
+                0xB3,
+                1,
+                0x80,
+                0xB5,
+                1,
+                0x49,  // VGL=-10.17v
+                0xB7,
+                1,
+                0x85,
+                0xB8,
+                1,
+                0x21,  // AVDD=6.6 & AVCL=-4.6
+                0xC1,
+                1,
+                0x78,
+                0xC2,
+                1,
+                0x78,
+
+                0xE0,
+                3,
+                0x00,
+                0x1B,
+                0x02,
+
+                0xE1,
+                11,
+                0x08,
+                0xA0,
+                0x00,
+                0x00,
+                0x07,
+                0xA0,
+                0x00,
+                0x00,
+                0x00,
+                0x44,
+                0x44,
+                0xE2,
+                12,
+                0x11,
+                0x11,
+                0x44,
+                0x44,
+                0xED,
+                0xA0,
+                0x00,
+                0x00,
+                0xEC,
+                0xA0,
+                0x00,
+                0x00,
+
+                0xE3,
+                4,
+                0x00,
+                0x00,
+                0x11,
+                0x11,
+                0xE4,
+                2,
+                0x44,
+                0x44,
+
+                0xE5,
+                16,
+                0x0A,
+                0xE9,
+                0xD8,
+                0xA0,
+                0x0C,
+                0xEB,
+                0xD8,
+                0xA0,
+                0x0E,
+                0xED,
+                0xD8,
+                0xA0,
+                0x10,
+                0xEF,
+                0xD8,
+                0xA0,
+
+                0xE6,
+                4,
+                0x00,
+                0x00,
+                0x11,
+                0x11,
+
+                0xE7,
+                2,
+                0x44,
+                0x44,
+
+                0xE8,
+                16,
+                0x09,
+                0xE8,
+                0xD8,
+                0xA0,
+                0x0B,
+                0xEA,
+                0xD8,
+                0xA0,
+                0x0D,
+                0xEC,
+                0xD8,
+                0xA0,
+                0x0F,
+                0xEE,
+                0xD8,
+                0xA0,
+
+                0xEB,
+                7,
+                0x02,
+                0x00,
+                0xE4,
+                0xE4,
+                0x88,
+                0x00,
+                0x40,
+                0xEC,
+                2,
+                0x3C,
+                0x00,
+                0xED,
+                16,
+                0xAB,
+                0x89,
+                0x76,
+                0x54,
+                0x02,
+                0xFF,
+                0xFF,
+                0xFF,
+                0xFF,
+                0xFF,
+                0xFF,
+                0x20,
+                0x45,
+                0x67,
+                0x98,
+                0xBA,
+
+                //-----------VAP & VAN---------------
+                // Command2 BK3 SEL
+                0xFF,
+                5,
+                0x77,
+                0x01,
+                0x00,
+                0x00,
+                0x13,
+
+                0xE5,
+                1,
+                0xE4,
+
+                // Command2 BK0 SEL
+                0xFF,
+                5,
+                0x77,
+                0x01,
+                0x00,
+                0x00,
+                0x00,
+
+                0x21,
+                0,  // 0x20 normal, 0x21 IPS
+                0x3A,
+                1,
+                0x60,  // 0x70 RGB888, 0x60 RGB666, 0x50 RGB565
+
+                0x11,
+                128,
+                120,  // Sleep Out
+
+                0x29,
+                0,  // Display On
+
+                0xFF,
+                0xFF,
+            };
+        const uint8_t* addr = list0;
+        for (;;) {  // For each command...
+            uint8_t cmd = *addr++;
+            uint8_t num = *addr++;  // Number of args to follow
+            if (cmd == 0xFF && num == 0xFF) break;
+            lcd_rgb_write_command(cmd, 1);  // Read, issue command
+            uint_fast8_t ms = num & 128;    // If hibit set, delay follows args
+            num &= ~128;                    // Mask out delay bit
+            if (num) {
+                do {                                 // For each argument...
+                    lcd_rgb_write_data(*addr++, 1);  // Read, issue argument
+                } while (--num);
+            }
+            if (ms) {
+                ms = *addr++;  // Read post-command delay time (ms)
+                vTaskDelay(pdMS_TO_TICKS(ms == 255 ? 500 : ms));
+            }
+        }
+        for (int i = 0; i < sizeof(backup_pins) / sizeof(backup_pins[0]);++i) {
+            lcd_pin_backup_restore(&backup_pins[i]);
+        }
+    }
+#ifdef LCD_PIN_NUM_CS
+#if LCD_PIN_NUM_CS >= 0
+        int32_t pin_cs = LCD_PIN_NUM_CS;
+        lcd_gpio_hi(pin_cs);
+#endif
+#endif
+    return ESP_OK;
+}
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
+
 /* Portions derived from LovyanGFX
 LovyanGFX ORIGINAL LIBRARY LICENSE:
 Software License Agreement (FreeBSD License)
@@ -287,6 +536,7 @@ The views and conclusions contained in the software and documentation are those
 of the authors and should not be interpreted as representing official policies,
 either expressed or implied, of the FreeBSD Project.
 */
+#ifdef LCD_PIN_NUM_HSYNC
 static __attribute__((always_inline)) inline volatile uint32_t* lcd_reg(uint32_t addr) { return (volatile uint32_t*)ETS_UNCACHED_ADDR(addr); }
 
 static uint8_t** lcd_lines_buffer = NULL;
@@ -325,43 +575,10 @@ static void lcd_default_isr_handler(void* args) {
         // }
     }
 }
-class lcd_pin_backup {
-   public:
-    lcd_pin_backup(gpio_num_t pin_num)
-        : _io_mux_gpio_reg{*reinterpret_cast<uint32_t*>(GPIO_PIN_MUX_REG[pin_num])}, _gpio_func_out_reg{*reinterpret_cast<uint32_t*>(GPIO_FUNC0_OUT_SEL_CFG_REG + (pin_num * 4))}, _pin_num{pin_num} {}
-
-    void restore(void) const {
-        if ((uint32_t)_pin_num < GPIO_NUM_MAX) {
-            *reinterpret_cast<uint32_t*>(GPIO_PIN_MUX_REG[_pin_num]) = _io_mux_gpio_reg;
-            *reinterpret_cast<uint32_t*>(GPIO_FUNC0_OUT_SEL_CFG_REG + (_pin_num * 4)) = _gpio_func_out_reg;
-        }
-    }
-
-   private:
-    uint32_t _io_mux_gpio_reg;
-    uint32_t _gpio_func_out_reg;
-    gpio_num_t _pin_num;
-};
-
-static inline volatile uint32_t* lcd_get_gpio_hi_reg(int_fast8_t pin) { return (pin & 32) ? &GPIO.out1_w1ts.val : &GPIO.out_w1ts; }
-static inline volatile uint32_t* lcd_get_gpio_lo_reg(int_fast8_t pin) { return (pin & 32) ? &GPIO.out1_w1tc.val : &GPIO.out_w1tc; }
-static inline void lcd_gpio_hi(int pin) {
-    if (pin >= 0) *lcd_get_gpio_hi_reg(pin) = 1 << (pin & 31);
-}
-static inline void lcd_gpio_lo(int_fast8_t pin) {
-    if (pin >= 0) *lcd_get_gpio_lo_reg(pin) = 1 << (pin & 31);
-}
-static void lcd_rgb_write_swspi(uint32_t data, uint8_t bits) {
-    uint_fast8_t mask = 1 << (bits - 1);
-    do {
-        lcd_gpio_lo(LCD_PIN_NUM_SCK);
-        if (data & mask) {
-            lcd_gpio_hi(LCD_PIN_NUM_SDA);
-        } else {
-            lcd_gpio_lo(LCD_PIN_NUM_SDA);
-        }
-        lcd_gpio_hi(LCD_PIN_NUM_SCK);
-    } while (mask >>= 1);
+static void lcd_gpio_pin_sig(uint32_t pin, uint32_t sig) {
+    gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[pin], PIN_FUNC_GPIO);
+    gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
+    esp_rom_gpio_connect_out_signal(pin, sig, false, false);
 }
 static inline void* lcd_heap_alloc(size_t length) { return heap_caps_malloc(length, MALLOC_CAP_8BIT); }
 static inline void* lcd_heap_alloc_dma(size_t length) { return heap_caps_malloc((length + 3) & ~3, MALLOC_CAP_DMA); }
@@ -409,19 +626,7 @@ static void lcd_calc_clock_div(uint32_t* div_a, uint32_t* div_b, uint32_t* div_n
         *div_n += 1;
     }
 }
-static void lcd_rgb_write_command(uint32_t data, uint_fast8_t len) {
-    do {
-        lcd_rgb_write_swspi(data & 0xFF, 9);
-        data >>= 8;
-    } while (--len);
-}
 
-static void lcd_rgb_write_data(uint32_t data, uint_fast8_t len) {
-    do {
-        lcd_rgb_write_swspi(data | 0x100, 9);
-        data >>= 8;
-    } while (--len);
-}
 int32_t lcd_search_dma_out_ch(int peripheral_select) {
 #if defined(SOC_GDMA_SUPPORTED)  // for ESP32S3 / ESP32C3
     // ESP32C3: SPI2==0
@@ -439,215 +644,72 @@ int32_t lcd_search_dma_out_ch(int peripheral_select) {
 #endif
     return -1;
 }
-static void lcd_gpio_pin_sig(uint32_t pin, uint32_t sig) {
-    gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[pin], PIN_FUNC_GPIO);
-    gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
-    esp_rom_gpio_connect_out_signal(pin, sig, false, false);
-}
-
-esp_err_t esp_lcd_new_panel_st7701() {
-    int32_t pin_mosi = LCD_PIN_NUM_SDA;
-    int32_t pin_sclk = LCD_PIN_NUM_SCK;
-    if (pin_mosi >= 0 && pin_sclk >= 0)
-    {
-      lcd_pin_backup backup_pins[] = { (gpio_num_t)pin_mosi, (gpio_num_t)pin_sclk };
-      lcd_gpio_lo(pin_mosi);
-      gpio_set_direction((gpio_num_t)pin_mosi, GPIO_MODE_OUTPUT);
-      lcd_gpio_lo(pin_sclk);
-      gpio_set_direction((gpio_num_t)pin_sclk, GPIO_MODE_OUTPUT);
-
-      int32_t pin_cs = LCD_PIN_NUM_CS;
-      lcd_gpio_lo(pin_cs);
-
-      lcd_rgb_write_command(0xFF, 1);
-      lcd_rgb_write_data(0x77, 1);
-      lcd_rgb_write_data(0x01, 1);
-      lcd_rgb_write_data(0x00, 2);
-      lcd_rgb_write_data(0x10, 1);
-
-      // 0xC0 : LNSET : Display Line Setting
-      lcd_rgb_write_command(0xC0, 1);
-      uint32_t line1 = (LCD_VRES >> 3) + 1;
-      uint32_t line2 = (LCD_VRES >> 1) & 3;
-      lcd_rgb_write_data(line1 + (line2 ? 0x80 : 0x00), 1);
-      lcd_rgb_write_data(line2, 1);
-
-      // 0xC3 : RGBCTRL
-      lcd_rgb_write_command(0xC3, 1);
-      uint32_t rgbctrl = 0;
-      if ( LCD_DE_IDLE_HIGH  ) rgbctrl += 0x01;
-      if ( LCD_CLK_IDLE_HIGH) rgbctrl += 0x02;
-      if (!LCD_HSYNC_POLARITY) rgbctrl += 0x04;
-      if (!LCD_VSYNC_POLARITY) rgbctrl += 0x08;
-      lcd_rgb_write_data(rgbctrl, 1);
-      lcd_rgb_write_data(0x10, 1);
-      lcd_rgb_write_data(0x08, 1);
-
-    static constexpr const uint8_t list0[] =
-    {
-      // Command2 BK0 SEL
-      0xFF,  5, 0x77, 0x01, 0x00, 0x00, 0x10,
-
-      0xC1,  2, 0x0D, 0x02,
-      0xC2,  2, 0x31, 0x05,
-      0xCD,  1, 0x08,
-
-      // Positive Voltage Gamma Control
-      0xB0, 16, 0x00, 0x11, 0x18, 0x0E, 0x11, 0x06, 0x07, 0x08,
-                0x07, 0x22, 0x04, 0x12, 0x0F, 0xAA, 0x31, 0x18,
-
-      // Negative Voltage Gamma Control
-      0xB1, 16, 0x00, 0x11, 0x19, 0x0E, 0x12, 0x07, 0x08, 0x08,
-                0x08, 0x22, 0x04, 0x11, 0x11, 0xA9, 0x32, 0x18,
-
-      // Command2 BK1 SEL
-      0xFF,  5, 0x77, 0x01, 0x00, 0x00, 0x11,
-
-      0xB0,  1, 0x60, // Vop=4.7375v
-      0xB1,  1, 0x32, // VCOM=32
-      0xB2,  1, 0x07, // VGH=15v
-      0xB3,  1, 0x80,
-      0xB5,  1, 0x49, // VGL=-10.17v
-      0xB7,  1, 0x85,
-      0xB8,  1, 0x21, // AVDD=6.6 & AVCL=-4.6
-      0xC1,  1, 0x78,
-      0xC2,  1, 0x78,
-
-      0xE0,  3, 0x00, 0x1B, 0x02,
-
-      0xE1, 11, 0x08, 0xA0, 0x00, 0x00, 0x07, 0xA0, 0x00, 0x00, 0x00, 0x44, 0x44,
-      0xE2, 12, 0x11, 0x11, 0x44, 0x44, 0xED, 0xA0, 0x00, 0x00, 0xEC, 0xA0, 0x00, 0x00,
-
-      0xE3,  4, 0x00, 0x00, 0x11, 0x11,
-      0xE4,  2, 0x44, 0x44,
-
-      0xE5, 16, 0x0A, 0xE9, 0xD8, 0xA0, 0x0C, 0xEB, 0xD8, 0xA0,
-                0x0E, 0xED, 0xD8, 0xA0, 0x10, 0xEF, 0xD8, 0xA0,
-
-      0xE6,  4, 0x00, 0x00, 0x11, 0x11,
-
-      0xE7,  2, 0x44, 0x44,
-
-      0xE8, 16, 0x09, 0xE8, 0xD8, 0xA0, 0x0B, 0xEA, 0xD8, 0xA0,
-                0x0D, 0xEC, 0xD8, 0xA0, 0x0F, 0xEE, 0xD8, 0xA0,
-
-      0xEB,  7, 0x02, 0x00, 0xE4, 0xE4, 0x88, 0x00, 0x40,
-      0xEC,  2, 0x3C, 0x00,
-      0xED, 16, 0xAB, 0x89, 0x76, 0x54, 0x02, 0xFF, 0xFF, 0xFF,
-                0xFF, 0xFF, 0xFF, 0x20, 0x45, 0x67, 0x98, 0xBA,
-
-      //-----------VAP & VAN---------------
-      // Command2 BK3 SEL
-      0xFF,  5, 0x77, 0x01, 0x00, 0x00, 0x13,
-
-      0xE5,  1, 0xE4,
-
-      // Command2 BK0 SEL
-      0xFF,  5, 0x77, 0x01, 0x00, 0x00, 0x00,
-
-      0x21,  0,  // 0x20 normal, 0x21 IPS
-      0x3A,  1, 0x60, // 0x70 RGB888, 0x60 RGB666, 0x50 RGB565
-
-      0x11, 128, 120, // Sleep Out
-
-      0x29, 0, // Display On
-
-      0xFF, 0xFF,
-    };
-    const uint8_t* addr = list0;
-     for (;;)
-    {                // For each command...
-      uint8_t cmd = *addr++;
-      uint8_t num = *addr++;   // Number of args to follow
-      if (cmd == 0xFF && num == 0xFF) break;
-      lcd_rgb_write_command(cmd, 1);  // Read, issue command
-      uint_fast8_t ms = num & 128;       // If hibit set, delay follows args
-      num &= ~128;          // Mask out delay bit
-      if (num)
-      {
-        do
-        {                   // For each argument...
-          lcd_rgb_write_data(*addr++, 1);  // Read, issue argument
-        } while (--num);
-      }
-      if (ms)
-      {
-        ms = *addr++;        // Read post-command delay time (ms)
-        vTaskDelay(pdMS_TO_TICKS (ms==255 ? 500 : ms) );
-      }
-    }
-     for (auto &bup : backup_pins) { bup.restore(); }
-    }
-    lcd_gpio_hi(LCD_PIN_NUM_CS);
-    return ESP_OK;
-}
 
 esp_err_t lcd_panel_draw_bitmap(int x1, int y1, int x2, int y2, void* color_data) {
-  if(lcd_lines_buffer==NULL) {
-    return ESP_ERR_INVALID_STATE;
-  }
-  if(color_data==NULL) {
-    return ESP_ERR_INVALID_ARG;
-  }
-  int tmp;
-  if(x1>x2) {
-    tmp = x1;
-    x1=x2;
-    x2 = tmp;
-  }
-  if(y1>y2) {
-    tmp = y1;
-    y1=y2;
-    y2 = tmp;
-  }
-  int cx1 = x1;
-  if(cx1<0) {
-    cx1 = 0;
-  } else if(cx1>=LCD_HRES) {
-    cx1 = LCD_HRES-1;
-  }
-  int cx2 = x2;
-  if(cx2<0) {
-    cx2 = 0;
-  } else if(cx2>=LCD_HRES) {
-    cx2 = LCD_HRES-1;
-  }
-  int cy1 = y1;
-  if(cy1<0) {
-    cy1 = 0;
-  } else if(cy1>=LCD_VRES) {
-    cy1 = LCD_VRES-1;
-  }
-  int cy2 = y2;
-  if(cy2<0) {
-    cy2 = 0;
-  } else if(cy2>=LCD_VRES) {
-    cy2 = LCD_VRES-1;
-  }
-  int bmp_offs_x = cx1-x1,bmp_offs_y=cy1-y1;
-  int bmp_w = cx2-cx1+1,bmp_h = cy2-cy1+1;
-  size_t bmp_len = bmp_w * (LCD_BIT_DEPTH>>3);
-  size_t bmp_offs = (bmp_offs_x*(LCD_BIT_DEPTH>>3));
-  size_t scr_offs = (cx1*(LCD_BIT_DEPTH>>3));
-  size_t bmp_stride = (x2-x1+1)*(LCD_BIT_DEPTH>>3);
-  uint8_t* src = (uint8_t*)color_data+bmp_offs_y;
-  for(int y = 0;y<bmp_h;++y) {
-    uint8_t* dst = (uint8_t*)lcd_lines_buffer[y+cy1]+scr_offs;
-    memcpy(dst,src+bmp_offs,bmp_len);
+    if (lcd_lines_buffer == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (color_data == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    int tmp;
+    if (x1 > x2) {
+        tmp = x1;
+        x1 = x2;
+        x2 = tmp;
+    }
+    if (y1 > y2) {
+        tmp = y1;
+        y1 = y2;
+        y2 = tmp;
+    }
+    int cx1 = x1;
+    if (cx1 < 0) {
+        cx1 = 0;
+    } else if (cx1 >= LCD_HRES) {
+        cx1 = LCD_HRES - 1;
+    }
+    int cx2 = x2;
+    if (cx2 < 0) {
+        cx2 = 0;
+    } else if (cx2 >= LCD_HRES) {
+        cx2 = LCD_HRES - 1;
+    }
+    int cy1 = y1;
+    if (cy1 < 0) {
+        cy1 = 0;
+    } else if (cy1 >= LCD_VRES) {
+        cy1 = LCD_VRES - 1;
+    }
+    int cy2 = y2;
+    if (cy2 < 0) {
+        cy2 = 0;
+    } else if (cy2 >= LCD_VRES) {
+        cy2 = LCD_VRES - 1;
+    }
+    int bmp_offs_x = cx1 - x1, bmp_offs_y = cy1 - y1;
+    int bmp_w = cx2 - cx1 + 1, bmp_h = cy2 - cy1 + 1;
+    size_t bmp_len = bmp_w * (LCD_BIT_DEPTH >> 3);
+    size_t bmp_offs = (bmp_offs_x * (LCD_BIT_DEPTH >> 3));
+    size_t scr_offs = (cx1 * (LCD_BIT_DEPTH >> 3));
+    size_t bmp_stride = (x2 - x1 + 1) * (LCD_BIT_DEPTH >> 3);
+    uint8_t* src = (uint8_t*)color_data + bmp_offs_y;
+    for (int y = 0; y < bmp_h; ++y) {
+        uint8_t* dst = (uint8_t*)lcd_lines_buffer[y + cy1] + scr_offs;
+        memcpy(dst, src + bmp_offs, bmp_len);
 #if __has_include(<esp32s3/rom/cache.h>)
-    Cache_WriteBack_Addr((uint32_t)dst, bmp_len);
+        Cache_WriteBack_Addr((uint32_t)dst, bmp_len);
 #endif
-    src+=bmp_stride;
-
-  }
-  return ESP_OK;
+        src += bmp_stride;
+    }
+    return ESP_OK;
 }
 bool lcd_panel_init() {
 #ifdef LCD_PIN_NUM_BCKL
 #if LCD_PIN_NUM_BCKL >= 0
-    gpio_set_direction((gpio_num_t)LCD_PIN_NUM_BCKL,GPIO_MODE_OUTPUT);
+    gpio_set_direction((gpio_num_t)LCD_PIN_NUM_BCKL, GPIO_MODE_OUTPUT);
 #endif
-#endif // PIN_NUM_BCKL
+#endif  // PIN_NUM_BCKL
 #ifdef LCD_PIN_NUM_CS
 #if LCD_PIN_NUM_CS >= 0
     lcd_gpio_hi(LCD_PIN_NUM_CS);
@@ -880,14 +942,261 @@ bool lcd_panel_init() {
 #endif
 #endif
 
-            return ESP_OK==LCD_PANEL();
+            return ESP_OK == LCD_PANEL();
         }
         lcd_heap_free(lineArray);
     }
 
     return false;
 }
+#endif  // LCD_PIN_NUM_HSYNC
+#else
+esp_err_t lcd_panel_draw_bitmap(int x1, int y1, int x2, int y2, void* bitmap) {
+    return esp_lcd_panel_draw_bitmap(lcd_handle, x1, y1, x2 + 1, y2 + 1, bitmap);
+}
+bool lcd_panel_init() {
+#ifdef LCD_PIN_NUM_BCKL
+#if LCD_PIN_NUM_BCKL >= 0
+    gpio_config_t bk_gpio_config;
+    bk_gpio_config.mode = GPIO_MODE_OUTPUT;
+    bk_gpio_config.pin_bit_mask = 1ULL << LCD_PIN_NUM_BCKL;
+    ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
+#endif  // LCD_PIN_NUM_BCKL >= 0
+#endif  // LCD_PIN_NUM_BCKL
+#ifdef LCD_PIN_NUM_CS
+#if LCD_PIN_NUM_CS >= 0
+    gpio_set_direction((gpio_num_t)LCD_PIN_NUM_CS, GPIO_MODE_OUTPUT);
+#endif
+#endif
+#ifdef LCD_PIN_NUM_SCK
+#if LCD_PIN_NUM_SCK >= 0
+    gpio_set_direction((gpio_num_t)LCD_PIN_NUM_SCK, GPIO_MODE_OUTPUT);
 
-#endif // !LCD_PIN_NUM_HSYNC
-#endif // LCD_IMPLEMENTATION
-#endif // LCD_INIT_H
+#endif
+#endif
+#ifdef LCD_PIN_NUM_SDA
+#if LCD_PIN_NUM_SDA >= 0
+    gpio_set_direction((gpio_num_t)LCD_PIN_NUM_SDA, GPIO_MODE_OUTPUT);
+#endif
+#endif
+    esp_lcd_rgb_panel_config_t panel_config;
+    memset(&panel_config, 0, sizeof(panel_config));
+
+    panel_config.data_width = 16;
+    panel_config.psram_trans_align = 64;
+    panel_config.num_fbs = 1;
+    panel_config.clk_src = LCD_CLK_SRC_DEFAULT;
+    panel_config.disp_gpio_num = -1;
+    panel_config.pclk_gpio_num = LCD_PIN_NUM_CLK;
+    panel_config.vsync_gpio_num = LCD_PIN_NUM_VSYNC;
+    panel_config.hsync_gpio_num = LCD_PIN_NUM_HSYNC;
+    panel_config.de_gpio_num = LCD_PIN_NUM_DE;
+    panel_config.data_gpio_nums[0] = LCD_PIN_NUM_D00;
+    panel_config.data_gpio_nums[1] = LCD_PIN_NUM_D01;
+    panel_config.data_gpio_nums[2] = LCD_PIN_NUM_D02;
+    panel_config.data_gpio_nums[3] = LCD_PIN_NUM_D03;
+    panel_config.data_gpio_nums[4] = LCD_PIN_NUM_D04;
+    panel_config.data_gpio_nums[5] = LCD_PIN_NUM_D05;
+    panel_config.data_gpio_nums[6] = LCD_PIN_NUM_D06;
+    panel_config.data_gpio_nums[7] = LCD_PIN_NUM_D07;
+    panel_config.data_gpio_nums[8] = LCD_PIN_NUM_D08;
+    panel_config.data_gpio_nums[9] = LCD_PIN_NUM_D09;
+    panel_config.data_gpio_nums[10] = LCD_PIN_NUM_D10;
+    panel_config.data_gpio_nums[11] = LCD_PIN_NUM_D11;
+    panel_config.data_gpio_nums[12] = LCD_PIN_NUM_D12;
+    panel_config.data_gpio_nums[13] = LCD_PIN_NUM_D13;
+    panel_config.data_gpio_nums[14] = LCD_PIN_NUM_D14;
+    panel_config.data_gpio_nums[15] = LCD_PIN_NUM_D15;
+
+    panel_config.timings.pclk_hz = LCD_PIXEL_CLOCK_HZ;
+    panel_config.timings.h_res = LCD_HRES;
+    panel_config.timings.v_res = LCD_VRES;
+    // The following parameters should refer to LCD spec
+    panel_config.timings.hsync_back_porch = LCD_HSYNC_BACK_PORCH;
+    panel_config.timings.hsync_front_porch = LCD_HSYNC_FRONT_PORCH;
+    panel_config.timings.hsync_pulse_width = LCD_HSYNC_PULSE_WIDTH;
+    panel_config.timings.vsync_back_porch = LCD_VSYNC_BACK_PORCH;
+    panel_config.timings.vsync_front_porch = LCD_VSYNC_FRONT_PORCH;
+    panel_config.timings.vsync_pulse_width = LCD_VSYNC_PULSE_WIDTH;
+    // TODO: test the following
+    panel_config.timings.flags.pclk_active_neg = true;
+    panel_config.timings.flags.de_idle_high = LCD_DE_IDLE_HIGH;
+    panel_config.timings.flags.hsync_idle_low = !LCD_HSYNC_POLARITY;
+    panel_config.timings.flags.vsync_idle_low = !LCD_VSYNC_POLARITY;
+    panel_config.timings.flags.pclk_idle_high = LCD_CLK_IDLE_HIGH;
+    panel_config.flags.fb_in_psram = true;  // allocate frame buffer in PSRAM
+    ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panel_config, &lcd_handle));
+    /*
+    esp_lcd_rgb_panel_event_callbacks_t cbs = {
+        .on_vsync = LCD_on_vsync_event,
+    };
+    ESP_ERROR_CHECK(esp_lcd_rgb_panel_register_event_callbacks(panel_handle, &cbs, &disp_drv));
+    */
+    ESP_ERROR_CHECK(esp_lcd_panel_reset(lcd_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_init(lcd_handle));
+    ESP_ERROR_CHECK(esp_lcd_new_panel_st7701());
+    
+
+#if LCD_PIN_NUM_BK_LIGHT >= 0
+    gpio_set_level(LCD_PIN_NUM_BCKL, LCD_BCKL_ON_LEVEL);
+#endif
+    return true;
+}
+#endif // ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+#endif  // ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
+#endif  // LCD_IMPLEMENTATION
+#ifdef LCD_IMPLEMENTATION
+#ifndef LCD_PIN_NUM_HSYNC
+// initialize the screen using the esp lcd panel API
+bool lcd_panel_init(size_t max_transfer_size, esp_lcd_panel_io_color_trans_done_cb_t done_callback) {
+#ifdef LCD_PIN_NUM_BCKL
+    gpio_set_direction((gpio_num_t)LCD_PIN_NUM_BCKL, GPIO_MODE_OUTPUT);
+#endif               // LCD_PIN_NUM_BCKL
+#ifdef LCD_SPI_HOST  // 1-bit SPI
+    spi_bus_config_t bus_config;
+    memset(&bus_config, 0, sizeof(bus_config));
+    bus_config.sclk_io_num = LCD_PIN_NUM_CLK;
+    bus_config.mosi_io_num = LCD_PIN_NUM_MOSI;
+#ifdef LCD_PIN_NUM_MISO
+    bus_config.miso_io_num = LCD_PIN_NUM_MISO;
+#else
+    bus_config.miso_io_num = -1;
+#endif  // LCD_PIN_NUM_MISO
+#ifdef LCD_PIN_NUM_QUADWP
+    bus_config.quadwp_io_num = LCD_PIN_NUM_QUADWP;
+#else
+    bus_config.quadwp_io_num = -1;
+#endif
+#ifdef LCD_PIN_NUM_QUADHD
+    bus_config.quadhd_io_num = LCD_PIN_NUM_QUADHD;
+#else
+    bus_config.quadhd_io_num = -1;
+#endif
+    bus_config.max_transfer_sz = max_transfer_size + 8;
+
+    // Initialize the SPI bus on LCD_SPI_HOST
+    spi_bus_initialize(LCD_SPI_HOST, &bus_config, SPI_DMA_CH_AUTO);
+
+    esp_lcd_panel_io_handle_t io_handle = NULL;
+    esp_lcd_panel_io_spi_config_t io_config;
+    memset(&io_config, 0, sizeof(io_config));
+    io_config.dc_gpio_num = LCD_PIN_NUM_DC,
+    io_config.cs_gpio_num = LCD_PIN_NUM_CS,
+    io_config.pclk_hz = LCD_PIXEL_CLOCK_HZ,
+    io_config.lcd_cmd_bits = 8,
+    io_config.lcd_param_bits = 8,
+    io_config.spi_mode = 0,
+    io_config.trans_queue_depth = 10,
+    io_config.on_color_trans_done = done_callback;
+    // Attach the LCD to the SPI bus
+    esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_SPI_HOST,
+                             &io_config, &io_handle);
+#elif defined(LCD_PIN_NUM_D07)  // 8 or 16-bit i8080
+    gpio_set_direction((gpio_num_t)LCD_PIN_NUM_RD, GPIO_MODE_OUTPUT);
+    gpio_set_level((gpio_num_t)LCD_PIN_NUM_RD, 1);
+    esp_lcd_i80_bus_handle_t i80_bus = NULL;
+    esp_lcd_i80_bus_config_t bus_config;
+    memset(&bus_config, 0, sizeof(bus_config));
+    bus_config.clk_src = LCD_CLK_SRC_PLL160M;
+    bus_config.dc_gpio_num = LCD_PIN_NUM_RS;
+    bus_config.wr_gpio_num = LCD_PIN_NUM_WR;
+    bus_config.data_gpio_nums[0] = LCD_PIN_NUM_D00;
+    bus_config.data_gpio_nums[1] = LCD_PIN_NUM_D01;
+    bus_config.data_gpio_nums[2] = LCD_PIN_NUM_D02;
+    bus_config.data_gpio_nums[3] = LCD_PIN_NUM_D03;
+    bus_config.data_gpio_nums[4] = LCD_PIN_NUM_D04;
+    bus_config.data_gpio_nums[5] = LCD_PIN_NUM_D05;
+    bus_config.data_gpio_nums[6] = LCD_PIN_NUM_D06;
+    bus_config.data_gpio_nums[7] = LCD_PIN_NUM_D07;
+#ifdef LCD_PIN_NUM_D15
+    bus_config.data_gpio_nums[8] = LCD_PIN_NUM_D08;
+    bus_config.data_gpio_nums[9] = LCD_PIN_NUM_D09;
+    bus_config.data_gpio_nums[10] = LCD_PIN_NUM_D10;
+    bus_config.data_gpio_nums[11] = LCD_PIN_NUM_D11;
+    bus_config.data_gpio_nums[12] = LCD_PIN_NUM_D12;
+    bus_config.data_gpio_nums[13] = LCD_PIN_NUM_D13;
+    bus_config.data_gpio_nums[14] = LCD_PIN_NUM_D14;
+    bus_config.data_gpio_nums[15] = LCD_PIN_NUM_D15;
+    bus_config.bus_width = 16;
+#else
+    bus_config.bus_width = 8;
+#endif  // LCD_PIN_NUM_D15
+    bus_config.max_transfer_bytes = max_transfer_size;
+
+    esp_lcd_new_i80_bus(&bus_config, &i80_bus);
+
+    esp_lcd_panel_io_handle_t io_handle = NULL;
+
+    esp_lcd_panel_io_i80_config_t io_config;
+    memset(&io_config, 0, sizeof(io_config));
+    io_config.cs_gpio_num = LCD_PIN_NUM_CS;
+    io_config.pclk_hz = LCD_PIXEL_CLOCK_HZ;
+    io_config.trans_queue_depth = 20;
+    io_config.dc_levels.dc_idle_level = 0;
+    io_config.dc_levels.dc_idle_level = 0;
+    io_config.dc_levels.dc_cmd_level = 0;
+    io_config.dc_levels.dc_dummy_level = 0;
+    io_config.dc_levels.dc_data_level = 1;
+    io_config.lcd_cmd_bits = 8;
+    io_config.lcd_param_bits = 8;
+    io_config.on_color_trans_done = done_callback;
+    io_config.user_ctx = NULL;
+#ifdef LCD_SWAP_COLOR_BYTES
+    io_config.flags.swap_color_bytes = LCD_SWAP_COLOR_BYTES;
+#else
+    io_config.flags.swap_color_bytes = false;
+#endif  // LCD_SWAP_COLOR_BYTES
+    io_config.flags.cs_active_high = false;
+    io_config.flags.reverse_color_bits = false;
+    esp_lcd_new_panel_io_i80(i80_bus, &io_config, &io_handle);
+#endif  // LCD_PIN_NUM_D15
+    lcd_handle = NULL;
+    esp_lcd_panel_dev_config_t panel_config;
+    memset(&panel_config, 0, sizeof(panel_config));
+#ifdef LCD_PIN_NUM_RST
+    panel_config.reset_gpio_num = LCD_PIN_NUM_RST;
+#else
+    panel_config.reset_gpio_num = -1;
+#endif
+    panel_config.color_space = LCD_COLOR_SPACE;
+    panel_config.bits_per_pixel = 16;
+
+    // Initialize the LCD configuration
+    LCD_PANEL(io_handle, &panel_config, &lcd_handle);
+
+#ifdef LCD_PIN_NUM_BCKL
+    // Turn off backlight to avoid unpredictable display on
+    // the LCD screen while initializing
+    // the LCD panel driver. (Different LCD screens may need different levels)
+    gpio_set_level((gpio_num_t)LCD_PIN_NUM_BCKL, LCD_BCKL_OFF_LEVEL);
+#endif  // LCD_PIN_NUM_BCKL
+    // Reset the display
+    esp_lcd_panel_reset(lcd_handle);
+
+    // Initialize LCD panel
+    esp_lcd_panel_init(lcd_handle);
+
+    esp_lcd_panel_swap_xy(lcd_handle, LCD_SWAP_XY);
+    esp_lcd_panel_set_gap(lcd_handle, LCD_GAP_X, LCD_GAP_Y);
+    esp_lcd_panel_mirror(lcd_handle, LCD_MIRROR_X, LCD_MIRROR_Y);
+    esp_lcd_panel_invert_color(lcd_handle, LCD_INVERT_COLOR);
+    // Turn on the screen
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+    esp_lcd_panel_disp_on_off(lcd_handle, false);
+#else
+    esp_lcd_panel_disp_off(lcd_handle, false);
+#endif
+
+#ifdef LCD_PIN_NUM_BCKL
+    // Turn on backlight (Different LCD screens may need different levels)
+    gpio_set_level((gpio_num_t)LCD_PIN_NUM_BCKL, LCD_BCKL_ON_LEVEL);
+#endif  // LCD_PIN_NUM_BCKL
+
+    return true;
+}
+esp_err_t lcd_panel_draw_bitmap(int x1, int y1, int x2, int y2, void* bitmap) {
+    return esp_lcd_panel_draw_bitmap(lcd_handle, x1, y1, x2 + 1, y2 + 1, bitmap);
+}
+#endif
+#endif
+#endif  // LCD_INIT_H
