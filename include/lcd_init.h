@@ -1036,9 +1036,10 @@ bool lcd_panel_init() {
     ESP_ERROR_CHECK(esp_lcd_panel_init(lcd_handle));
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7701());
     
+    
 
 #if LCD_PIN_NUM_BK_LIGHT >= 0
-    gpio_set_level(LCD_PIN_NUM_BCKL, LCD_BCKL_ON_LEVEL);
+    gpio_set_level((gpio_num_t)LCD_PIN_NUM_BCKL, LCD_BCKL_ON_LEVEL);
 #endif
     return true;
 }
@@ -1158,9 +1159,17 @@ bool lcd_panel_init(size_t max_transfer_size, esp_lcd_panel_io_color_trans_done_
 #else
     panel_config.reset_gpio_num = -1;
 #endif
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+if(((int)LCD_COLOR_SPACE) == 0) {
+    panel_config.rgb_endian = LCD_RGB_ENDIAN_RGB;
+} else {
+    panel_config.rgb_endian = LCD_RGB_ENDIAN_BGR;
+}
+#else
     panel_config.color_space = LCD_COLOR_SPACE;
+#endif
     panel_config.bits_per_pixel = 16;
-
+    
     // Initialize the LCD configuration
     LCD_PANEL(io_handle, &panel_config, &lcd_handle);
 
@@ -1182,7 +1191,7 @@ bool lcd_panel_init(size_t max_transfer_size, esp_lcd_panel_io_color_trans_done_
     esp_lcd_panel_invert_color(lcd_handle, LCD_INVERT_COLOR);
     // Turn on the screen
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-    esp_lcd_panel_disp_on_off(lcd_handle, false);
+    esp_lcd_panel_disp_on_off(lcd_handle, true);
 #else
     esp_lcd_panel_disp_off(lcd_handle, false);
 #endif
